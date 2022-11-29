@@ -7,16 +7,81 @@ import time
 import pickle
 from collections import deque
 import json
-import tensorflow as tf
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras.optimizers import RMSprop, SGD, Adam
-import tensorflow.keras.backend as K
-from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense, Softmax, MaxPool2D
-from tensorflow.keras import Model
-from tensorflow.keras.regularizers import l2
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
+#import tensorflow as tf
+#from tensorflow.keras.regularizers import l2
+#from tensorflow.keras.optimizers import RMSprop, SGD, Adam
+#import tensorflow.keras.backend as K
+#from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense, Softmax, MaxPool2D
+#from tensorflow.keras import Model
+#from tensorflow.keras.regularizers import l2
 # from tensorflow.keras.losses import Huber
 
+#DeepQLearningAgent
+#AdvantageActorCriticAgent
+class CNN_DeepQLearningAgent(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.network = nn.Sequential(
+            #v17.1.json data from lastest version
+                #Feature learning
+                #Layer 1
+                nn.Conv2d(16, 32, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(32, 64, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(64, 64, kernel_size=5),
+                nn.ReLU(),
+                nn.Flatten(), 
+
+                #Classification
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, 4))
+    def forward(self, x):
+        return self.network(x)
+class CNN_AdvantageActorCriticAgent_model_logits(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.network = nn.Sequential(
+                #Feature learning
+                #Layer 1
+                nn.Conv2d(16, 32, kernel_size=4),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, kernel_size=4),
+                nn.ReLU(),
+                nn.Flatten(), 
+
+                #Classification
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, 4))
+    def forward(self, x):
+        return self.network(x)      
+class CNN_AdvantageActorCriticAgent_model_values(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.network = nn.Sequential(
+                #Feature learning
+                #Layer 1
+                nn.Conv2d(16, 32, kernel_size=4),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, kernel_size=4),
+                nn.ReLU(),
+                nn.Flatten(), 
+
+                #Classification
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, 4),
+                nn.Linear(64, 1))
+    def forward(self, x):
+        return self.network(x)   
+                
 def huber_loss(y_true, y_pred, delta=1):
+
     """Keras implementation for huber loss
     loss = {
         0.5 * (y_true - y_pred)**2 if abs(y_true - y_pred) < delta
@@ -36,11 +101,20 @@ def huber_loss(y_true, y_pred, delta=1):
     loss : Tensor
         loss values for all points
     """
+    ## This code changed from TF to PyTorch
+    """
     error = (y_true - y_pred)
     quad_error = 0.5*tf.math.square(error)
     lin_error = delta*(tf.math.abs(error) - 0.5*delta)
     # quadratic error, linear error
     return tf.where(tf.math.abs(error) < delta, quad_error, lin_error)
+    """
+
+    error = (y_true - y_pred)
+    quad_error = 0.5*torch.square(error)
+    lin_error = delta*(torch.abs(error) - 0.5*delta)
+    # quadratic error, linear error
+    return torch.where(torch.abs(error) < delta, quad_error, lin_error)
 
 def mean_huber_loss(y_true, y_pred, delta=1):
     """Calculates the mean value of huber loss
@@ -59,7 +133,9 @@ def mean_huber_loss(y_true, y_pred, delta=1):
     loss : Tensor
         average loss across points
     """
-    return tf.reduce_mean(huber_loss(y_true, y_pred, delta))
+    ## This code changed from TF to PyTorch
+    """return tf.reduce_mean(huber_loss(y_true, y_pred, delta))"""
+    return torch.mean(huber_loss(y_true, y_pred, delta))
 
 class Agent():
     """Base class for all agents
@@ -378,6 +454,11 @@ class DeepQLearningAgent(Agent):
             DQN model graph
         """
         # define the input layer, shape is dependent on the board size and frames
+        model = CNN_DeepQLearningAgent()
+
+        ## I removed the TF code and added CNN class with number fra config V.17.1
+        """
+        
         with open('model_config/{:s}.json'.format(self._version), 'r') as f:
             m = json.loads(f.read())
         
@@ -395,6 +476,7 @@ class DeepQLearningAgent(Agent):
         out = Dense(self._n_actions, activation='linear', name='action_values')(x)
         model = Model(inputs=input_board, outputs=out)
         model.compile(optimizer=RMSprop(0.0005), loss=mean_huber_loss)
+        """
                 
         """
         input_board = Input((self._board_size, self._board_size, self._n_frames,), name='input')
@@ -421,8 +503,13 @@ class DeepQLearningAgent(Agent):
         # the last dense layers should be trainable
         for s in ['action_prev_dense', 'action_values']:
             self._model.get_layer(s).trainable = True
-        self._model.compile(optimizer = self._model.optimizer, 
-                            loss = self._model.loss)
+
+        ## I change this part from TF to TORCH to return loss and optimizer since torch do not have compile
+        """self._model.compile(optimizer = self._model.optimizer, 
+                            loss = self._model.loss)"""
+        optimizer = self._model.optimizer  
+        loss = self._model.loss                  
+        return optimizer, loss
 
 
     def get_action_proba(self, board, values=None):
@@ -466,9 +553,12 @@ class DeepQLearningAgent(Agent):
             assert isinstance(iteration, int), "iteration should be an integer"
         else:
             iteration = 0
-        self._model.save_weights("{}/model_{:04d}.h5".format(file_path, iteration))
+            ##Change this part from TF to pytorch since Pytorch have different way to save and different file type
+        torch.save(self._model.state_dict(), "{}/model_{:04d}.pt".format(file_path, iteration))
+        #self._model.save_weights("{}/model_{:04d}.h5".format(file_path, iteration))
         if(self._use_target_net):
-            self._target_net.save_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
+            torch.save(self._target_net.state_dict(), "{}/model_{:04d}_target.pt".format(file_path, iteration))
+            #self._target_net.save_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
 
     def load_model(self, file_path='', iteration=None):
         """ load any existing models, if available """
@@ -492,9 +582,13 @@ class DeepQLearningAgent(Agent):
             assert isinstance(iteration, int), "iteration should be an integer"
         else:
             iteration = 0
-        self._model.load_weights("{}/model_{:04d}.h5".format(file_path, iteration))
+            ## This part change from TF to pyptorch - So I can load the model with Pytorch
+
+        #self._model.load_weights("{}/model_{:04d}.h5".format(file_path, iteration))
+        self._model.load_state_dict(torch.load("{}/model_{:04d}.pt".format(file_path, iteration)))
         if(self._use_target_net):
-            self._target_net.load_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
+            self._target_net.load_state_dict(torch.load("{}/model_{:04d}_target.pt".format(file_path, iteration)))
+            #self._target_net.load_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
         # print("Couldn't locate models at {}, check provided path".format(file_path))
 
     def print_models(self):
@@ -534,6 +628,14 @@ class DeepQLearningAgent(Agent):
             loss : float
             The current error (error metric is defined in reset_models)
         """
+        ## Here change from TF to PyTorch so traning of the model with pytorch
+        #Here I used same param from my assigment 4
+        learning_rate = 0.001
+        criterion = nn.CrossEntropyLoss()
+        # Initialize optimizer
+        optimizer = torch.optim.SGD(self._model.parameters(), learning_rate)
+
+
         s, a, r, next_s, done, legal_moves = self._buffer.sample(batch_size)
         if(reward_clip):
             r = np.sign(r)
@@ -550,7 +652,13 @@ class DeepQLearningAgent(Agent):
         # we bother only with the difference in reward estimate at the selected action
         target = (1-a)*target + a*discounted_reward
         # fit
-        loss = self._model.train_on_batch(self._normalize_board(s), target)
+        #https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.zero_grad.html
+        optimizer.zero_grad()
+        #Loss changed to torch.tensor
+        loss = criterion(torch.tensor(next_model_outputs), torch.tensor(target))
+        #https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.step.html
+        optimizer.step()
+        #loss = self._model.train_on_batch(self._normalize_board(s), target)
         # loss = round(loss, 5)
         return loss
 
@@ -581,88 +689,12 @@ class DeepQLearningAgent(Agent):
         self._model.set_weights(agent_for_copy._model.get_weights())
         self._target_net.set_weights(agent_for_copy._model_pred.get_weights())
 
-class PolicyGradientAgent(DeepQLearningAgent):
-    """This agent learns via Policy Gradient method
+## This class not relevant So I removed it.
 
-    Attributes
-    ----------
-    _update_function : function
-        defines the policy update function to use while training
-    """
-    def __init__(self, board_size=10, frames=4, buffer_size=10000,
-                 gamma = 0.99, n_actions=3, use_target_net=False,
-                 version=''):
-        """Initializer for PolicyGradientAgent, similar to DeepQLearningAgent
-        but does an extra assignment to the training function
-        """
-        DeepQLearningAgent.__init__(self, board_size=board_size, frames=frames,
-                                buffer_size=buffer_size, gamma=gamma,
-                                n_actions=n_actions, use_target_net=False,
-                                version=version)
-        self._actor_optimizer = tf.keras.optimizer.Adam(1e-6)
+#class PolicyGradientAgent(DeepQLearningAgent):
 
-    def _agent_model(self):
-        """Returns the model which evaluates prob values for a given state input
-        Model is compiled in a different function
-        Overrides parent
-        
-        Returns
-        -------
-        model : TensorFlow Graph
-            Policy Gradient model graph
-        """
-        input_board = Input((self._board_size, self._board_size, self._n_frames,))
-        x = Conv2D(16, (4,4), activation = 'relu', data_format='channels_last', kernel_regularizer=l2(0.01))(input_board)
-        x = Conv2D(32, (4,4), activation = 'relu', data_format='channels_last', kernel_regularizer=l2(0.01))(x)
-        x = Flatten()(x)
-        x = Dense(64, activation = 'relu', kernel_regularizer=l2(0.01))(x)
-        out = Dense(self._n_actions, activation = 'linear', name = 'action_logits', kernel_regularizer=l2(0.01))(x)
-
-        model = Model(inputs = input_board, outputs = out)
-        # do not compile the model here, but rather use the outputs separately
-        # in a training function to create any custom loss function
-        # model.compile(optimizer = RMSprop(0.0005), loss = 'mean_squared_error')
-        return model
-
-    def train_agent(self, batch_size=32, beta=0.1, normalize_rewards=False,
-                    num_games=1, reward_clip=False):
-        """Train the model by sampling from buffer and return the error
-        The buffer is assumed to contain all states of a finite set of games
-        and is fully sampled from the buffer
-        Overrides parent
-        
-        Parameters
-        ----------
-        batch_size : int, optional
-            Not used here, kept for consistency with other agents
-        beta : float, optional
-            The weight for the entropy loss
-        normalize_rewards : bool, optional
-            Whether to normalize rewards for stable training
-        num_games : int, optional
-            Total games played in the current batch
-        reward_clip : bool, optional
-            Not used here, kept for consistency with other agents
-
-        Returns
-        -------
-        error : list
-            The current loss (total loss, classification loss, entropy)
-        """
-        # in policy gradient, only complete episodes are used for training
-        s, a, r, _, _, _ = self._buffer.sample(self._buffer.get_current_size())
-        # unlike DQN, the discounted reward is not estimated but true one
-        # we have defined custom policy graident loss function above
-        # use that to train to agent model
-        # normzlize the rewards for training stability
-        if(normalize_rewards):
-            r = (r - np.mean(r))/(np.std(r) + 1e-8)
-        target = np.multiply(a, r)
-        loss = actor_loss_update(self._prepare_input(s), target, self._model,
-                  self._actor_optimizer, beta=beta, num_games=num_games)
-        return loss[0] if len(loss)==1 else loss
-
-class AdvantageActorCriticAgent(PolicyGradientAgent):
+#I change this class to take inn DeepQLearningAgent
+class AdvantageActorCriticAgent(DeepQLearningAgent):
     """This agent uses the Advantage Actor Critic method to train
     the reinforcement learning agent, we will use Q actor critic here
 
@@ -680,7 +712,10 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
                                 buffer_size=buffer_size, gamma=gamma,
                                 n_actions=n_actions, use_target_net=use_target_net,
                                 version=version)
-        self._optimizer = tf.keras.optimizers.RMSprop(5e-4)
+
+        ##Change this from TF to PyTorch
+        self._optimizer =  torch.optim.RMSprop(5e-4)
+        #self._optimizer = tf.keras.optimizers.RMSprop(5e-4)
 
     def _agent_model(self):
         """Returns the models which evaluate prob logits and action values 
@@ -694,6 +729,12 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
         model_full : TensorFlow Graph
             A2C model complete graph
         """
+        model_logits = CNN_AdvantageActorCriticAgent_model_logits()
+        model_values =CNN_AdvantageActorCriticAgent_model_values()
+        model_full = CNN_AdvantageActorCriticAgent_model_logits(), CNN_AdvantageActorCriticAgent_model_values()
+        ### From my understanding after looking at this code so it return different dense layer 
+        ### So Im going to make multi CNN to switch this code to Pytorch
+        """
         input_board = Input((self._board_size, self._board_size, self._n_frames,))
         x = Conv2D(16, (3,3), activation='relu', data_format='channels_last')(input_board)
         x = Conv2D(32, (3,3), activation='relu', data_format='channels_last')(x)
@@ -705,6 +746,7 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
         model_logits = Model(inputs=input_board, outputs=action_logits)
         model_full = Model(inputs=input_board, outputs=[action_logits, state_values])
         model_values = Model(inputs=input_board, outputs=state_values)
+        """
         # updates are calculated in the train_agent function
 
         return model_logits, model_full, model_values
@@ -733,11 +775,16 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
             assert isinstance(iteration, int), "iteration should be an integer"
         else:
             iteration = 0
-        self._model.save_weights("{}/model_{:04d}.h5".format(file_path, iteration))
-        self._full_model.save_weights("{}/model_{:04d}_full.h5".format(file_path, iteration))
+##Convert saving the model from TF to Torch
+        torch.save(self._model.state_dict(), "{}/model_{:04d}.pt".format(file_path, iteration))
+        #self._model.save_weights("{}/model_{:04d}.h5".format(file_path, iteration))
+        torch.save(self._full_model.state_dict(), "{}/model_{:04d}_full.pt".format(file_path, iteration))
+        #self._full_model.save_weights("{}/model_{:04d}_full.h5".format(file_path, iteration))
         if(self._use_target_net):
-            self._values_model.save_weights("{}/model_{:04d}_values.h5".format(file_path, iteration))
-            self._target_net.save_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
+            torch.save(self._values_model.state_dict(), "{}/model_{:04d}_values.pt".format(file_path, iteration))
+            #self._values_model.save_weights("{}/model_{:04d}_values.h5".format(file_path, iteration))
+            torch.save(self._target_net.state_dict(), "{}/model_{:04d}_target.pt".format(file_path, iteration))
+            #self._target_net.save_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
 
     def load_model(self, file_path='', iteration=None):
         """ load any existing models, if available """
@@ -761,11 +808,16 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
             assert isinstance(iteration, int), "iteration should be an integer"
         else:
             iteration = 0
-        self._model.load_weights("{}/model_{:04d}.h5".format(file_path, iteration))
-        self._full_model.load_weights("{}/model_{:04d}_full.h5".format(file_path, iteration))
+#Conver load the model from TF to Pytorch
+        self._model.load_state_dict(torch.load("{}/model_{:04d}.pt".format(file_path, iteration)))
+        #self._model.load_weights("{}/model_{:04d}.h5".format(file_path, iteration))
+        self._full_model.load_state_dict(torch.load("{}/model_{:04d}_full.pt".format(file_path, iteration)))
+        #self._full_model.load_weights("{}/model_{:04d}_full.h5".format(file_path, iteration))
         if(self._use_target_net):
-            self._values_model.load_weights("{}/model_{:04d}_values.h5".format(file_path, iteration))
-            self._target_net.load_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
+            self._values_model.load_state_dict(torch.load("{}/model_{:04d}_values.pt".format(file_path, iteration)))
+            #self._values_model.load_weights("{}/model_{:04d}_values.h5".format(file_path, iteration))
+            #self._target_net.load_weights("{}/model_{:04d}_target.h5".format(file_path, iteration))
+            self._target_net.load_state_dict(torch.load("{}/model_{:04d}_target.pt".format(file_path, iteration)))
 
     def update_target_net(self):
         """Update the weights of the target network, which is kept
@@ -821,10 +873,12 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
 
         # calculate V values
         if(self._use_target_net):
-            next_s_pred = self._target_net.predict_on_batch(next_s_prepared)
+            #https://androidkt.com/create-numpy-array-from-pytorch-tensor-using-detach-numpy/
+            # Create NumPy array from PyTorch Tensor using detach().numpy()
+            next_s_pred = self._target_net(torch.Tensor(next_s_prepared)).detach().numpy()
         else:
-            next_s_pred = self._values_model.predict_on_batch(next_s_prepared)
-        s_pred = self._values_model.predict_on_batch(s_prepared)
+            next_s_pred = self._values_model(torch.Tensor(next_s_prepared)).detach().numpy()
+        s_pred = self._values_model(torch.Tensor(s_prepared)).detach().numpy()
         
         # prepare target
         future_reward = self._gamma * next_s_pred * (1-done)
@@ -834,435 +888,58 @@ class AdvantageActorCriticAgent(PolicyGradientAgent):
         # calculate target for critic, simply current reward + future expected reward
         critic_target = r + future_reward
 
+## Convert this code from TF to pytorch
         model = self._full_model
-        with tf.GradientTape() as tape:
-            model_out = model(s_prepared)
-            policy = tf.nn.softmax(model_out[0])
-            log_policy = tf.nn.log_softmax(model_out[0])
+        #model_out = model(s_prepared)
+        model_out = model(torch.tensor(s_prepared))
+        # policy = tf.nn.softmax(model_out[0])
+        policy = F.softmax(model_out[0])
+        #log_policy = tf.nn.log_softmax(model_out[0])
+        log_policy = F.log_softmax(model_out[0])
+        #J = tf.reduce_sum(tf.multiply(advantage, log_policy))/num_games
+        J = torch.mean(torch.multiply(advantage, log_policy))/num_games
+        #entropy = -tf.reduce_sum(tf.multiply(policy, log_policy))/num_games
+        entropy = -torch.mean(torch.multiply(policy, log_policy))/num_games
+        #actor_loss = -J - beta*entropy
+        actor_loss = -J - beta*entropy
+        #critic_loss = mean_huber_loss(critic_target, model_out[1])
+        critic_loss = mean_huber_loss(torch.tensor(critic_target), model_out[1])
+        #loss = actor_loss + critic_loss
+        loss = actor_loss + critic_loss
+#https://discuss.pytorch.org/t/pytorch-equivalant-of-tensorflow-gradienttape/74915
+##From what I understood Pytorch equivalant of tensorflow GradientTape
+
+#loss = compute_loss(m)
+#optimizer.zero_grad()
+#loss.backward()
+#optimizer.step()
+
+        #with tf.GradientTape() as tape:
+         #   model_out = model(s_prepared)
+          #  policy = tf.nn.softmax(model_out[0])
+          #  log_policy = tf.nn.log_softmax(model_out[0])
             # calculate loss
-            J = tf.reduce_sum(tf.multiply(advantage, log_policy))/num_games
-            entropy = -tf.reduce_sum(tf.multiply(policy, log_policy))/num_games
-            actor_loss = -J - beta*entropy
-            critic_loss = mean_huber_loss(critic_target, model_out[1])
-            loss = actor_loss + critic_loss
+           # J = tf.reduce_sum(tf.multiply(advantage, log_policy))/num_games
+           # entropy = -tf.reduce_sum(tf.multiply(policy, log_policy))/num_games
+            #actor_loss = -J - beta*entropy
+           # critic_loss = mean_huber_loss(critic_target, model_out[1])
+            #loss = actor_loss + critic_loss
+
         # get the gradients
-        grads = tape.gradient(loss, model.trainable_weights)
+        #grads = tape.gradient(loss, model.trainable_weights)
         # grads = [tf.clip_by_value(grad, -5, 5) for grad in grads]
         # run the optimizer
-        self._optimizer.apply_gradients(zip(grads, model.trainable_variables))
+        learning_rate = 0.001
+        # Initialize optimizer
+        optimizer = torch.optim.SGD(model.parameters(), learning_rate)
+        #https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.zero_grad.html
+        optimizer.zero_grad()
+        #https://androidkt.com/how-loss-backward-optimizer-step-and-optimizer-zero_grad-related-in-pytorch/
+        loss.backward()
+        optimizer.step()
+        #self._optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-        loss = [loss.numpy(), actor_loss.numpy(), critic_loss.numpy()]
+
+
+        loss = [loss.detach().numpy(), actor_loss.detach().numpy(), critic_loss.detach().numpy()]
         return loss[0] if len(loss)==1 else loss
-
-class HamiltonianCycleAgent(Agent):
-    """This agent prepares a Hamiltonian Cycle through the board and then
-    follows it to reach the food, inherits Agent
-
-    Attributes
-    ----------
-        board_size (int): side length of the board
-        frames (int): no of frames available in one board state
-        n_actions (int): no of actions available in the action space
-    """
-    def __init__(self, board_size=10, frames=4, buffer_size=10000,
-                 gamma = 0.99, n_actions=3, use_target_net=False,
-                 version=''):
-        assert board_size%2 == 0, "Board size should be odd for hamiltonian cycle"
-        Agent.__init__(self, board_size=board_size, frames=frames, buffer_size=buffer_size,
-                 gamma=gamma, n_actions=n_actions, use_target_net=use_target_net,
-                 version=version)
-        # self._get_cycle()
-        self._get_cycle_square()
-    
-    def _get_neighbors(self, point):
-        """
-        point is a single integer such that 
-        row = point//self._board_size
-        col = point%self._board_size
-        """
-        row, col = point//self._board_size, point%self._board_size
-        neighbors = []
-        for delta_row, delta_col in [[-1,0], [1,0], [0,1], [0,-1]]:
-            new_row, new_col = row + delta_row, col + delta_col
-            if(1 <= new_row and new_row <= self._board_size-2 and\
-               1 <= new_col and new_col <= self._board_size-2):
-                neighbors.append(new_row*self._board_size + new_col)
-        return neighbors
-
-    def _hamil_util(self):
-        neighbors = self._get_neighbors(self._cycle[self._index])
-        if(self._index == ((self._board_size-2)**2)-1):
-            if(self._start_point in neighbors):
-                # end of path and cycle
-                return True
-            else:
-                # end of path but not cycle
-                return False
-        else:
-            for i in neighbors:
-                if(i not in self._cycle_set):
-                    self._index += 1
-                    self._cycle[self._index] = i
-                    self._cycle_set.add(i)
-                    ret = self._hamil_util()
-                    if(ret):
-                        return True
-                    else:
-                        # remove the element and backtrack
-                        self._cycle_set.remove(self._cycle[self._index])
-                        self._index -= 1
-            # if all neighbors in cycle set
-            return False
-
-    def _get_cycle(self):
-        """
-        given a square board size, calculate a hamiltonian cycle through
-        the graph, use it to follow the board, the _cycle variable is a list
-        of tuples which tells the next coordinates to go to
-        note that the board starts at row 1, col 1
-        """
-        self._start_point = 1*self._board_size + 1
-        self._cycle = np.zeros(((self._board_size-2) ** 2,))
-        # calculate the cycle path, start at 0, 0
-        self._index = 0
-        self._cycle[self._index] = self._start_point
-        self._cycle_set = set([self._start_point])
-        cycle_possible = self._hamil_util()
-
-    def _get_cycle_square(self):
-        """
-        simple implementation to get the hamiltonian cycle
-        for square board, by traversing in a up and down fashion
-        all movement code is based on this implementation
-        """
-        self._cycle = np.zeros(((self._board_size-2) ** 2,), dtype=np.int64)
-        index = 0
-        sp = 1*self._board_size + 1
-        while(index < self._cycle.shape[0]):
-            if(index == 0):
-                # put as is
-                pass
-            elif((sp//self._board_size) == 2 and (sp%self._board_size) == self._board_size-2):
-                # at the point where we go up and then left to
-                # complete the cycle, go up once
-                sp = ((sp//self._board_size)-1)*self._board_size + (sp%self._board_size)
-            elif(index != 1 and sp//self._board_size == 1):
-                # keep going left to complete cycle
-                sp = ((sp//self._board_size))*self._board_size + ((sp%self._board_size)-1)
-            elif((sp%self._board_size)%2 == 1):
-                # go down till possible
-                sp = ((sp//self._board_size)+1)*self._board_size + (sp%self._board_size)
-                if(sp//self._board_size == self._board_size-1):
-                    # should have turned right instead of goind down
-                    sp = ((sp//self._board_size)-1)*self._board_size + ((sp%self._board_size)+1)
-            else:
-                # go up till the last but one row
-                sp = ((sp//self._board_size)-1)*self._board_size + (sp%self._board_size)
-                if(sp//self._board_size == 1):
-                    # should have turned right instead of goind up
-                    sp = ((sp//self._board_size)+1)*self._board_size + ((sp%self._board_size)+1)
-            self._cycle[index] = sp
-            index += 1
-
-    def move(self, board, legal_moves, values):
-        """ get the action using agent policy """
-        cy_len = (self._board_size-2)**2
-        curr_head = np.sum(self._board_grid * \
-            (board[:,:,0]==values['head']).reshape(self._board_size, self._board_size))
-        index = 0
-        while(1):
-            if(self._cycle[index] == curr_head):
-                break
-            index = (index+1)%cy_len
-        prev_head = self._cycle[(index-1)%cy_len]
-        next_head = self._cycle[(index+1)%cy_len]
-        # get the next move
-        if(board[prev_head//self._board_size, prev_head%self._board_size, 0] == 0):
-            # check if snake is in line with the hamiltonian cycle or not
-            if(next_head > curr_head):
-                return 3
-            else:
-                return 1
-        else:
-            # calcualte intended direction to get move
-            curr_head_row, curr_head_col = self._point_to_row_col(curr_head)
-            prev_head_row, prev_head_col = self._point_to_row_col(prev_head)
-            next_head_row, next_head_col = self._point_to_row_col(next_head)
-            dx, dy = next_head_col - curr_head_col, -next_head_row + curr_head_row
-            if(dx == 1 and dy == 0):
-                return 0
-            elif(dx == 0 and dy == 1):
-                return 1
-            elif(dx == -1 and dy == 0):
-                return 2
-            elif(dx == 0 and dy == -1):
-                return 3
-            else:
-                return -1
-                
-            """
-            # calculate vectors representing current and new directions
-            # to get the direction in which to turn
-            d1 = (curr_head_row - prev_head_row, curr_head_col - prev_head_col)
-            d2 = (next_head_row - curr_head_row, next_head_col - curr_head_col)
-            # take cross product
-            turn_dir = d1[0]*d2[1] - d1[1]*d2[0]
-            if(turn_dir == 0):
-                return 1
-            elif(turn_dir == -1):
-                return 0
-            else:
-                return 2
-            """
-
-    def get_action_proba(self, board, values):
-        """ for compatibility """
-        move = self.move(board, values)
-        prob = [0] * self._n_actions
-        prob[move] = 1
-        return prob
-
-    def _get_model_outputs(self, board=None, model=None):
-        """ for compatibility """ 
-        return [[0] * self._n_actions]
-
-    def load_model(self, **kwargs):
-        """ for compatibility """
-        pass
-
-class SupervisedLearningAgent(DeepQLearningAgent):
-    """This agent learns in a supervised manner. A close to perfect
-    agent is first used to generate training data, playing only for
-    a few frames at a time, and then the actions taken by the perfect agent
-    are used as targets. This helps learning of feature representation
-    and can speed up training of DQN agent later.
-
-    Attributes
-    ----------
-    _model_action_out : TensorFlow Softmax layer
-        A softmax layer on top of the DQN model to train as a classification
-        problem (instead of regression)
-    _model_action : TensorFlow Model
-        The model that will be trained and is simply DQN model + softmax
-    """
-    def __init__(self, board_size=10, frames=2, buffer_size=10000,
-                 gamma=0.99, n_actions=3, use_target_net=True,
-                 version=''):
-        """Initializer for SupervisedLearningAgent, similar to DeepQLearningAgent
-        but creates extra layer and model for classification training
-        """        
-        DeepQLearningAgent.__init__(self, board_size=board_size, frames=frames, buffer_size=buffer_size,
-                 gamma=gamma, n_actions=n_actions, use_target_net=use_target_net,
-                 version=version)
-        # define model with softmax activation, and use action as target
-        # instead of the reward value
-        self._model_action_out = Softmax()(self._model.get_layer('action_values').output)
-        self._model_action = Model(inputs=self._model.get_layer('input').input, outputs=self._model_action_out)
-        self._model_action.compile(optimizer=Adam(0.0005), loss='categorical_crossentropy')
-        
-    def train_agent(self, batch_size=32, num_games=1, epochs=5, 
-                    reward_clip=False):
-        """Train the model by sampling from buffer and return the error.
-        _model_action is trained as a classification problem to learn weights
-        for all the layers of the DQN model
-        
-        Parameters
-        ----------
-        batch_size : int, optional
-            The number of examples to sample from buffer, should be small
-        num_games : int, optional
-            Not used here, kept for consistency with other agents
-        epochs : int, optional
-            Number of epochs to train the model for
-        reward_clip : bool, optional
-            Not used here, kept for consistency with other agents
-
-        Returns
-        -------
-            loss : float
-            The current error (error metric is cross entropy)
-        """
-        s, a, _, _, _, _ = self._buffer.sample(self.get_buffer_size())
-        # fit using the actions as assumed to be best
-        history = self._model_action.fit(self._normalize_board(s), a, epochs=epochs)
-        loss = round(history.history['loss'][-1], 5)
-        # loss = self._model_action.evaluate(self._normalize_board(s), a, verbose=0)
-        return loss
-
-    def get_max_output(self):
-        """Get the maximum output of Q values from the model
-        This value is used to later divide the weights of the output layer
-        of DQN model since the values can be unexpectedly high because
-        we are training the classification model (which disregards the relative
-        magnitudes of the linear outputs)
-
-        Returns
-        -------
-        max_value : int
-            The maximum output produced by the network (_model)
-        """
-        s, _, _, _, _, _ = self._buffer.sample(self.get_buffer_size())
-        max_value = np.max(np.abs(self._model.predict(self._normalize_board(s))))
-        return max_value
-
-    def normalize_layers(self, max_value=None):
-        """Use the max value to divide the weights of the last layer
-        of the DQN model, this helps stabilize the initial training of DQN
-
-        Parameters
-        ----------
-        max_value : int, optional
-            Value by which to divide, assumed to be 1 if None
-        """
-        # normalize output layers by this value
-        if(max_value is None or np.isnan(max_value)):
-            max_value = 1.0
-        # dont normalize all layers as that will shrink the
-        # output proportional to the no of layers
-        self._model.get_layer('action_values').set_weights(\
-           [x/max_value for x in self._model.get_layer('action_values').get_weights()])
-
-class BreadthFirstSearchAgent(Agent):
-    """
-    finds the shortest path from head to food
-    while avoiding the borders and body
-    """
-    def _get_neighbors(self, point, values, board):
-        """
-        point is a single integer such that 
-        row = point//self._board_size
-        col = point%self._board_size
-        """
-        row, col = self._point_to_row_col(point)
-        neighbors = []
-        for delta_row, delta_col in [[-1,0], [1,0], [0,1], [0,-1]]:
-            new_row, new_col = row + delta_row, col + delta_col
-            if(board[new_row][new_col] in \
-               [values['board'], values['food'], values['head']]):
-                neighbors.append(new_row*self._board_size + new_col)
-        return neighbors
-
-    def _get_shortest_path(self, board, values):
-        # get the head coordinate
-        board = board[:,:,0]
-        head = ((self._board_grid * (board == values['head'])).sum())
-        points_to_search = deque()
-        points_to_search.append(head)
-        path = []
-        row, col = self._point_to_row_col(head)
-        distances = np.ones((self._board_size, self._board_size)) * np.inf
-        distances[row][col] = 0
-        visited = np.zeros((self._board_size, self._board_size))
-        visited[row][col] = 1
-        found = False
-        while(not found):
-            if(len(points_to_search) == 0):
-                # complete board has been explored without finding path
-                # take any arbitrary action
-                path = []
-                break
-            else:
-                curr_point = points_to_search.popleft()
-                curr_row, curr_col = self._point_to_row_col(curr_point)
-                n = self._get_neighbors(curr_point, values, board)
-                if(len(n) == 0):
-                    # no neighbors available, explore other paths
-                    continue
-                # iterate over neighbors and calculate distances
-                for p in n:
-                    row, col = self._point_to_row_col(p)
-                    if(distances[row][col] > 1 + distances[curr_row][curr_col]):
-                        # update shortest distance
-                        distances[row][col] = 1 + distances[curr_row][curr_col]
-                    if(board[row][col] == values['food']):
-                        # reached food, break
-                        found = True
-                        break
-                    if(visited[row][col] == 0):
-                        visited[curr_row][curr_col] = 1
-                        points_to_search.append(p)
-        # create the path going backwards from the food
-        curr_point = ((self._board_grid * (board == values['food'])).sum())
-        path.append(curr_point)
-        while(1):
-            curr_row, curr_col = self._point_to_row_col(curr_point)
-            if(distances[curr_row][curr_col] == np.inf):
-                # path is not possible
-                return []
-            if(distances[curr_row][curr_col] == 0):
-                # path is complete
-                break
-            n = self._get_neighbors(curr_point, values, board)
-            for p in n:
-                row, col = self._point_to_row_col(p)
-                if(distances[row][col] != np.inf and \
-                   distances[row][col] == distances[curr_row][curr_col] - 1):
-                    path.append(p)
-                    curr_point = p
-                    break
-        return path
-
-    def move(self, board, legal_moves, values):
-        if(board.ndim == 3):
-            board = board.reshape((1,) + board.shape)
-        board_main = board.copy()
-        a = np.zeros((board.shape[0],), dtype=np.uint8)
-        for i in range(board.shape[0]):
-            board = board_main[i,:,:,:]
-            path = self._get_shortest_path(board, values)
-            if(len(path) == 0):
-                a[i] = 1
-                continue
-            next_head = path[-2]
-            curr_head = (self._board_grid * (board[:,:,0] == values['head'])).sum()
-            # get prev head position
-            if(((board[:,:,0] == values['head']) + (board[:,:,0] == values['snake']) \
-                == (board[:,:,1] == values['head']) + (board[:,:,1] == values['snake'])).all()):
-                # we are at the first frame, snake position is unchanged
-                prev_head = curr_head - 1
-            else:
-                # we are moving
-                prev_head = (self._board_grid * (board[:,:,1] == values['head'])).sum()
-            curr_head_row, curr_head_col = self._point_to_row_col(curr_head)
-            prev_head_row, prev_head_col = self._point_to_row_col(prev_head)
-            next_head_row, next_head_col = self._point_to_row_col(next_head)
-            dx, dy = next_head_col - curr_head_col, -next_head_row + curr_head_row
-            if(dx == 1 and dy == 0):
-                a[i] = 0
-            elif(dx == 0 and dy == 1):
-                a[i] = 1
-            elif(dx == -1 and dy == 0):
-                a[i] = 2
-            elif(dx == 0 and dy == -1):
-                a[i] = 3
-            else:
-                a[i] = 0
-        return a
-        """
-        d1 = (curr_head_row - prev_head_row, curr_head_col - prev_head_col)
-        d2 = (next_head_row - curr_head_row, next_head_col - curr_head_col)
-        # take cross product
-        turn_dir = d1[0]*d2[1] - d1[1]*d2[0]
-        if(turn_dir == 0):
-            return 1
-        elif(turn_dir == -1):
-            return 0
-        else:
-            return 2
-        """
-
-    def get_action_proba(self, board, values):
-        """ for compatibility """
-        move = self.move(board, values)
-        prob = [0] * self._n_actions
-        prob[move] = 1
-        return prob
-
-    def _get_model_outputs(self, board=None, model=None):
-        """ for compatibility """ 
-        return [[0] * self._n_actions]
-
-    def load_model(self, **kwargs):
-        """ for compatibility """
-        pass
-
