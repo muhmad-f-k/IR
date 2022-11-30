@@ -12,12 +12,13 @@ import pandas as pd
 import time
 from utils import play_game2
 from game_environment import SnakeNumpy
-import tensorflow as tf
+#import tensorflow as tf
 from agent import DeepQLearningAgent, AdvantageActorCriticAgent
 import json
-
+#https://wandb.ai/sauravmaheshkar/RSNA-MICCAI/reports/How-to-Set-Random-Seeds-in-PyTorch-and-Tensorflow--VmlldzoxMDA2MDQy
 # some global variables
-tf.random.set_seed(42)
+np.random.seed(42)
+#tf.random.set_seed(42)
 version = 'v17.1'
 
 # get training configurations
