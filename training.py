@@ -10,8 +10,8 @@ from tqdm import tqdm
 from collections import deque
 import pandas as pd
 import time
-from utils import play_game, play_game2
-from game_environment import Snake, SnakeNumpy
+from utils import play_game2
+from game_environment import SnakeNumpy
 import tensorflow as tf
 from agent import DeepQLearningAgent, AdvantageActorCriticAgent
 import json

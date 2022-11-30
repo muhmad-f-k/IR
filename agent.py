@@ -504,7 +504,7 @@ class DeepQLearningAgent(Agent):
         for s in ['action_prev_dense', 'action_values']:
             self._model.get_layer(s).trainable = True
 
-        ## I change this part from TF to TORCH to return loss and optimizer since torch do not have compile
+        ## I rewrote this part to return loss and optimizer since torch do not have compile
         """self._model.compile(optimizer = self._model.optimizer, 
                             loss = self._model.loss)"""
         optimizer = self._model.optimizer  
